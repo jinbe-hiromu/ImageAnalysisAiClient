@@ -44,4 +44,15 @@ public sealed class RemoteEngineTools(RemoteEngineService remoteEngineService)
         var manual = await _remoteEngineService.GetProviderManualAsync(remoteEngineUri, providerId, version, cancellationToken).ConfigureAwait(false);
         return System.Text.Json.JsonSerializer.Serialize(new { status = "ok", manual });
     }
+
+    [McpServerTool(Name = "provider_get_variable_value"), Description("指定 URL の ProviderCore に接続し、Controller 名と配下の Variable 名で一意に特定した値を取得します。読み取り専用です。")]
+    public async Task<string> GetProviderVariableValueAsync(
+        [Description("ProviderCore の gRPC endpoint。例: http://127.0.0.1:50000")] string providerUri,
+        [Description("取得対象 Controller の名前。完全一致で検索します。")] string controllerName,
+        [Description("Controller 配下の取得対象 Variable の名前。完全一致で検索します。")] string variableName,
+        CancellationToken cancellationToken = default)
+    {
+        var variable = await _remoteEngineService.GetProviderVariableValueAsync(providerUri, controllerName, variableName, cancellationToken).ConfigureAwait(false);
+        return System.Text.Json.JsonSerializer.Serialize(new { status = "ok", variable });
+    }
 }

@@ -1,6 +1,5 @@
 using ChatAppAI.McpServer.Services;
 using ChatAppAI.McpServer.Tools;
-using ModelContextProtocol.Server;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,3 +16,4 @@ var app = builder.Build();
 app.MapMcp("/mcp");
 
 await app.RunAsync();
+
