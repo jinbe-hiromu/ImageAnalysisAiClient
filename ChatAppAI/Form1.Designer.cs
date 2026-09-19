@@ -1,4 +1,4 @@
-namespace ChatAppAI
+namespace ImageAnalysisAiClient
 {
     partial class Form1
     {

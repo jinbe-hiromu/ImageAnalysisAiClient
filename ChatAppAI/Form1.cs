@@ -3,7 +3,7 @@ using ModelContextProtocol.Client;
 using OllamaSharp;
 
 
-namespace ChatAppAI
+namespace ImageAnalysisAiClient
 {
     public partial class Form1 : Form
     {

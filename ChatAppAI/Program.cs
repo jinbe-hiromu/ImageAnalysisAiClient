@@ -1,4 +1,4 @@
-namespace ChatAppAI
+namespace ImageAnalysisAiClient
 {
     internal static class Program
     {
