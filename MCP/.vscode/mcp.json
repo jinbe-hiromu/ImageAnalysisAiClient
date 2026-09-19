@@ -1,9 +1,0 @@
-{
-  "servers": {
-    "remoteengine-demo": {
-      "type": "stdio",
-      "command": "node",
-      "args": ["src/server.mjs"]
-    }
-  }
-}
