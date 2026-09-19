@@ -31,11 +31,14 @@ namespace ImageAnalysisAiClient
             components = new System.ComponentModel.Container();
             lblModel = new Label();
             cmbModel = new ComboBox();
-            lblSendMessage = new Label();
-            txbSendMessage = new TextBox();
+            lblImage = new Label();
+            btnSelectImage = new Button();
+            lblImagePath = new Label();
+            picImage = new PictureBox();
             btnSend = new Button();
             lblReceiveMessage = new Label();
             txbReceiveMessage = new TextBox();
+            ((System.ComponentModel.ISupportInitialize)picImage).BeginInit();
             SuspendLayout();
             //
             // lblModel
@@ -57,70 +60,95 @@ namespace ImageAnalysisAiClient
             cmbModel.TabIndex = 1;
             cmbModel.SelectedIndexChanged += cmbModel_SelectedIndexChanged;
             //
-            // lblSendMessage
+            // lblImage
             //
-            lblSendMessage.AutoSize = true;
-            lblSendMessage.Location = new Point(12, 62);
-            lblSendMessage.Name = "lblSendMessage";
-            lblSendMessage.Size = new Size(76, 15);
-            lblSendMessage.TabIndex = 2;
-            lblSendMessage.Text = "送信メッセージ";
+            lblImage.AutoSize = true;
+            lblImage.Location = new Point(12, 62);
+            lblImage.Name = "lblImage";
+            lblImage.Size = new Size(31, 15);
+            lblImage.TabIndex = 2;
+            lblImage.Text = "画像";
             //
-            // txbSendMessage
+            // btnSelectImage
             //
-            txbSendMessage.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            txbSendMessage.Location = new Point(12, 80);
-            txbSendMessage.Multiline = true;
-            txbSendMessage.Name = "txbSendMessage";
-            txbSendMessage.ScrollBars = ScrollBars.Vertical;
-            txbSendMessage.Size = new Size(776, 100);
-            txbSendMessage.TabIndex = 3;
+            btnSelectImage.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            btnSelectImage.Location = new Point(12, 80);
+            btnSelectImage.Name = "btnSelectImage";
+            btnSelectImage.Size = new Size(140, 35);
+            btnSelectImage.TabIndex = 3;
+            btnSelectImage.Text = "画像を選択...";
+            btnSelectImage.UseVisualStyleBackColor = true;
+            btnSelectImage.Click += btnSelectImage_Click;
+            //
+            // lblImagePath
+            //
+            lblImagePath.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            lblImagePath.AutoEllipsis = true;
+            lblImagePath.Location = new Point(160, 88);
+            lblImagePath.Name = "lblImagePath";
+            lblImagePath.Size = new Size(628, 20);
+            lblImagePath.TabIndex = 4;
+            lblImagePath.Text = "画像が選択されていません";
+            //
+            // picImage
+            //
+            picImage.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            picImage.BorderStyle = BorderStyle.FixedSingle;
+            picImage.Location = new Point(12, 125);
+            picImage.Name = "picImage";
+            picImage.Size = new Size(320, 220);
+            picImage.SizeMode = PictureBoxSizeMode.Zoom;
+            picImage.TabIndex = 5;
+            picImage.TabStop = false;
             //
             // btnSend
             //
-            btnSend.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            btnSend.Location = new Point(668, 186);
+            btnSend.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            btnSend.Location = new Point(12, 360);
             btnSend.Name = "btnSend";
-            btnSend.Size = new Size(120, 35);
-            btnSend.TabIndex = 4;
-            btnSend.Text = "送信";
+            btnSend.Size = new Size(140, 40);
+            btnSend.TabIndex = 6;
+            btnSend.Text = "画像を解析";
             btnSend.UseVisualStyleBackColor = true;
             btnSend.Click += btnSend_Click;
             //
             // lblReceiveMessage
             //
             lblReceiveMessage.AutoSize = true;
-            lblReceiveMessage.Location = new Point(12, 233);
+            lblReceiveMessage.Location = new Point(12, 415);
             lblReceiveMessage.Name = "lblReceiveMessage";
             lblReceiveMessage.Size = new Size(76, 15);
-            lblReceiveMessage.TabIndex = 5;
-            lblReceiveMessage.Text = "受信メッセージ";
+            lblReceiveMessage.TabIndex = 7;
+            lblReceiveMessage.Text = "解析結果";
             //
             // txbReceiveMessage
             //
             txbReceiveMessage.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            txbReceiveMessage.Location = new Point(12, 251);
+            txbReceiveMessage.Location = new Point(12, 433);
             txbReceiveMessage.Multiline = true;
             txbReceiveMessage.Name = "txbReceiveMessage";
             txbReceiveMessage.ReadOnly = true;
             txbReceiveMessage.ScrollBars = ScrollBars.Vertical;
-            txbReceiveMessage.Size = new Size(776, 187);
-            txbReceiveMessage.TabIndex = 6;
+            txbReceiveMessage.Size = new Size(776, 215);
+            txbReceiveMessage.TabIndex = 8;
             //
             // Form1
             //
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(800, 450);
+            ClientSize = new Size(800, 660);
             Controls.Add(txbReceiveMessage);
             Controls.Add(lblReceiveMessage);
             Controls.Add(btnSend);
-            Controls.Add(txbSendMessage);
-            Controls.Add(lblSendMessage);
+            Controls.Add(picImage);
+            Controls.Add(lblImagePath);
+            Controls.Add(btnSelectImage);
+            Controls.Add(lblImage);
             Controls.Add(cmbModel);
             Controls.Add(lblModel);
             Name = "Form1";
-            Text = "ChatAppAI";
+            Text = "ImageAnalysisAiClient";
             Load += Form1_Load;
+            ((System.ComponentModel.ISupportInitialize)picImage).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -129,8 +157,10 @@ namespace ImageAnalysisAiClient
 
         private Label lblModel;
         private ComboBox cmbModel;
-        private Label lblSendMessage;
-        private TextBox txbSendMessage;
+        private Label lblImage;
+        private Button btnSelectImage;
+        private Label lblImagePath;
+        private PictureBox picImage;
         private Button btnSend;
         private Label lblReceiveMessage;
         private TextBox txbReceiveMessage;

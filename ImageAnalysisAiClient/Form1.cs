@@ -19,9 +19,15 @@ namespace ImageAnalysisAiClient
 
         // MCP クライアント（ツール呼び出し用）
         private McpClient? _mcpClient;
-        private IList<McpClientTool> _tools;
+        private IList<McpClientTool>? _tools;
 
         // MCP サーバから取得したツールのリスト
+
+        // 選択中の画像データ（VLM への添付用）。未選択時は null。
+        private byte[]? _selectedImageBytes;
+
+        // 選択中の画像の MIME タイプ（例: image/png）。
+        private string? _selectedImageMediaType;
 
         public Form1()
         {
@@ -96,15 +102,78 @@ namespace ImageAnalysisAiClient
             if (cmbModel.SelectedItem is string model)
             {
                 _selectedModel = model;
-                Text = $"ChatAppAI - {model}";
+                Text = $"ImageAnalysisAiClient - {model}";
             }
+        }
+
+        // 「画像を選択」ボタン。エクスプローラー（OpenFileDialog）を開き、
+        // 選択された画像をプレビュー表示しつつ、VLM 送信用にバイト配列として保持する。
+        private void btnSelectImage_Click(object sender, EventArgs e)
+        {
+            using var dialog = new OpenFileDialog
+            {
+                Title = "画像ファイルを選択してください",
+                Filter = "画像ファイル (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp)|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp|すべてのファイル (*.*)|*.*"
+            };
+
+            if (dialog.ShowDialog(this) != DialogResult.OK)
+            {
+                return;
+            }
+
+            try
+            {
+                var path = dialog.FileName;
+
+                // VLM への送信用に画像バイトを読み込む。
+                _selectedImageBytes = File.ReadAllBytes(path);
+                _selectedImageMediaType = GetImageMediaType(path);
+
+                // 既存のプレビュー画像を破棄する。
+                picImage.Image?.Dispose();
+
+                // ファイルロックを避けるため、バイト配列から生成したうえでコピーを保持する。
+                using var ms = new MemoryStream(_selectedImageBytes);
+                using var loaded = Image.FromStream(ms);
+                picImage.Image = new Bitmap(loaded);
+
+                lblImagePath.Text = Path.GetFileName(path);
+            }
+            catch (Exception ex)
+            {
+                _selectedImageBytes = null;
+                _selectedImageMediaType = null;
+                picImage.Image?.Dispose();
+                picImage.Image = null;
+                lblImagePath.Text = "画像が選択されていません";
+                txbReceiveMessage.Text = $"画像の読み込みに失敗しました: {ex.Message}";
+            }
+        }
+
+        // 拡張子から画像の MIME タイプを判定する。
+        private static string GetImageMediaType(string path)
+        {
+            var ext = Path.GetExtension(path).ToLowerInvariant();
+            return ext switch
+            {
+                ".png" => "image/png",
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".gif" => "image/gif",
+                ".bmp" => "image/bmp",
+                ".webp" => "image/webp",
+                _ => "application/octet-stream"
+            };
         }
 
         private async void btnSend_Click(object sender, EventArgs e)
         {
-            var message = txbSendMessage.Text;
-            if (string.IsNullOrWhiteSpace(message))
+            // 画像が選択されているかどうか。
+            var hasImage = _selectedImageBytes is not null && _selectedImageMediaType is not null;
+
+            // 画像が未選択の場合は解析できない。
+            if (!hasImage)
             {
+                txbReceiveMessage.Text = "画像を選択してください。";
                 return;
             }
 
@@ -115,6 +184,9 @@ namespace ImageAnalysisAiClient
                 return;
             }
 
+            // 画像に対して問い合わせる既定の質問。
+            var message = "この画像には何が写っていますか？日本語で一言で説明してください。";
+
             // 送信中は二重送信を防ぐためボタンを無効化する。
             btnSend.Enabled = false;
             txbReceiveMessage.Clear();
@@ -124,12 +196,16 @@ namespace ImageAnalysisAiClient
                 // ChatOptions を使用してモデル ID を指定する。
                 var options = new ChatOptions
                 {
-                    Tools = [.. _tools],
+                    Tools = _tools is null ? null : [.. _tools],
                     ModelId = _selectedModel
                 };
 
+                // ユーザーメッセージを構築し、選択された画像を添付する。
+                var chatMessage = new ChatMessage(ChatRole.User, message);
+                chatMessage.Contents.Add(new DataContent(_selectedImageBytes!, _selectedImageMediaType!));
+
                 // IChatClient の GetStreamingResponseAsync を使用して、メッセージを送信し応答をストリーミングで受信する。
-                await foreach (var update in _chatClient.GetStreamingResponseAsync(message, options))
+                await foreach (var update in _chatClient.GetStreamingResponseAsync([chatMessage], options))
                 {
                     // 届いた断片を都度 txbReceiveMessage に追記して表示する。
                     txbReceiveMessage.AppendText(update.Text);
