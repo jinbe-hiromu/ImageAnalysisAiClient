@@ -29,6 +29,8 @@ namespace ImageAnalysisAiClient
         private void InitializeComponent()
         {
             components = new System.ComponentModel.Container();
+            lblProvider = new Label();
+            cmbProvider = new ComboBox();
             lblModel = new Label();
             cmbModel = new ComboBox();
             lblImage = new Label();
@@ -41,13 +43,33 @@ namespace ImageAnalysisAiClient
             ((System.ComponentModel.ISupportInitialize)picImage).BeginInit();
             SuspendLayout();
             //
+            // lblProvider
+            //
+            lblProvider.AutoSize = true;
+            lblProvider.Location = new Point(500, 9);
+            lblProvider.Name = "lblProvider";
+            lblProvider.Size = new Size(43, 15);
+            lblProvider.TabIndex = 0;
+            lblProvider.Text = "接続先";
+            //
+            // cmbProvider
+            //
+            cmbProvider.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            cmbProvider.DropDownStyle = ComboBoxStyle.DropDownList;
+            cmbProvider.Items.AddRange(new object[] { "Local (Ollama)", "Azure AI Foundry" });
+            cmbProvider.Location = new Point(550, 5);
+            cmbProvider.Name = "cmbProvider";
+            cmbProvider.Size = new Size(238, 23);
+            cmbProvider.TabIndex = 1;
+            cmbProvider.SelectedIndexChanged += cmbProvider_SelectedIndexChanged;
+            //
             // lblModel
             //
             lblModel.AutoSize = true;
             lblModel.Location = new Point(12, 9);
             lblModel.Name = "lblModel";
             lblModel.Size = new Size(40, 15);
-            lblModel.TabIndex = 0;
+            lblModel.TabIndex = 2;
             lblModel.Text = "モデル";
             //
             // cmbModel
@@ -56,8 +78,8 @@ namespace ImageAnalysisAiClient
             cmbModel.DropDownStyle = ComboBoxStyle.DropDownList;
             cmbModel.Location = new Point(12, 27);
             cmbModel.Name = "cmbModel";
-            cmbModel.Size = new Size(776, 23);
-            cmbModel.TabIndex = 1;
+            cmbModel.Size = new Size(470, 23);
+            cmbModel.TabIndex = 3;
             cmbModel.SelectedIndexChanged += cmbModel_SelectedIndexChanged;
             //
             // lblImage
@@ -136,6 +158,8 @@ namespace ImageAnalysisAiClient
             //
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(800, 660);
+            Controls.Add(cmbProvider);
+            Controls.Add(lblProvider);
             Controls.Add(txbReceiveMessage);
             Controls.Add(lblReceiveMessage);
             Controls.Add(btnSend);
@@ -155,6 +179,8 @@ namespace ImageAnalysisAiClient
 
         #endregion
 
+        private Label lblProvider;
+        private ComboBox cmbProvider;
         private Label lblModel;
         private ComboBox cmbModel;
         private Label lblImage;

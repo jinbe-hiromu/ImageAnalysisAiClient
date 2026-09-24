@@ -7,9 +7,15 @@ namespace ImageAnalysisAiClient
 {
     public partial class Form1 : Form
     {
+        private const string AzureDeploymentName = "gpt-6-luna";
+        private const string AzureEndpoint = "https://taiseiishiyama-9692-resource.services.ai.azure.com/openai/v1";
+        // TODO: Azure AI Foundry の実際の API キーを手動で入力してください。
+        private static readonly string AzureApiKey = "YOUR_AZURE_AI_FOUNDRY_API_KEY";
+
         // ローカルで起動している Ollama サーバーに接続するチャットクライアント。
         // IChatClient インターフェイスを使用して、抽象化された方法でチャット機能を利用する。
         private IChatClient _chatClient;
+        private IChatClient? _azureChatClient;
 
         // Ollama API クライアントのインスタンス（モデル一覧取得用）
         private readonly OllamaApiClient _ollamaClient;
@@ -40,8 +46,28 @@ namespace ImageAnalysisAiClient
 
         private async void Form1_Load(object sender, EventArgs e)
         {
-            await LoadModelsAsync();
             await LoadListToolsAsync();
+
+            if (cmbProvider.SelectedIndex == 0)
+            {
+                await LoadModelsAsync();
+            }
+        }
+
+        private async void cmbProvider_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            _selectedModel = null;
+            cmbModel.Items.Clear();
+
+            if (cmbProvider.SelectedIndex == 1)
+            {
+                cmbModel.Items.Add(AzureDeploymentName);
+                cmbModel.SelectedIndex = 0;
+            }
+            else if (cmbProvider.SelectedIndex == 0)
+            {
+                await LoadModelsAsync();
+            }
         }
 
         // Ollama にインストール済みのローカルモデル一覧を取得し、ドロップダウンに反映する。
@@ -56,6 +82,7 @@ namespace ImageAnalysisAiClient
                     .ToArray();
 
                 cmbModel.Items.Clear();
+                _selectedModel = null;
                 cmbModel.Items.AddRange(names);
 
                 if (cmbModel.Items.Count > 0)
@@ -184,8 +211,14 @@ namespace ImageAnalysisAiClient
                 return;
             }
 
-            // 画像に対して問い合わせる既定の質問。
-            var message = "この画像には何が写っていますか？日本語で一言で説明してください。";
+            var promptPath = Path.Combine(AppContext.BaseDirectory, "waste_sorting_vision_prompt.md");
+            if (!File.Exists(promptPath))
+            {
+                txbReceiveMessage.Text = "waste_sorting_vision_prompt.md が見つかりません。アプリの出力フォルダーを確認してください。";
+                return;
+            }
+
+            var systemPrompt = await File.ReadAllTextAsync(promptPath);
 
             // 送信中は二重送信を防ぐためボタンを無効化する。
             btnSend.Enabled = false;
@@ -193,6 +226,25 @@ namespace ImageAnalysisAiClient
 
             try
             {
+                if (cmbProvider.SelectedIndex == 1 && _azureChatClient is null)
+                {
+                    if (AzureApiKey == "YOUR_AZURE_AI_FOUNDRY_API_KEY")
+                    {
+                        txbReceiveMessage.Text = "Form1.cs の AzureApiKey に Azure AI Foundry の API キーを入力してください。";
+                        return;
+                    }
+
+                    var openAiChatClient = new OpenAI.Chat.ChatClient(
+                        AzureDeploymentName,
+                        new System.ClientModel.ApiKeyCredential(AzureApiKey),
+                        new OpenAI.OpenAIClientOptions { Endpoint = new Uri(AzureEndpoint) })
+                        .AsIChatClient();
+
+                    _azureChatClient = new ChatClientBuilder(openAiChatClient)
+                        .UseFunctionInvocation()
+                        .Build();
+                }
+
                 // ChatOptions を使用してモデル ID を指定する。
                 var options = new ChatOptions
                 {
@@ -201,11 +253,13 @@ namespace ImageAnalysisAiClient
                 };
 
                 // ユーザーメッセージを構築し、選択された画像を添付する。
-                var chatMessage = new ChatMessage(ChatRole.User, message);
+                var systemMessage = new ChatMessage(ChatRole.System, systemPrompt);
+                var chatMessage = new ChatMessage(ChatRole.User, "添付画像を指示に従って分別してください。");
                 chatMessage.Contents.Add(new DataContent(_selectedImageBytes!, _selectedImageMediaType!));
 
                 // IChatClient の GetStreamingResponseAsync を使用して、メッセージを送信し応答をストリーミングで受信する。
-                await foreach (var update in _chatClient.GetStreamingResponseAsync([chatMessage], options))
+                var activeChatClient = cmbProvider.SelectedIndex == 1 ? _azureChatClient! : _chatClient;
+                await foreach (var update in activeChatClient.GetStreamingResponseAsync([systemMessage, chatMessage], options))
                 {
                     // 届いた断片を都度 txbReceiveMessage に追記して表示する。
                     txbReceiveMessage.AppendText(update.Text);

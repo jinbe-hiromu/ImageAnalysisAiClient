@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.8.0" />
+    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.8.0" />
     <PackageReference Include="ModelContextProtocol" Version="1.4.1" />
     <PackageReference Include="OllamaSharp" Version="5.4.25" />
   </ItemGroup>
@@ -18,6 +19,12 @@
     <!-- MCPフォルダ全体をビルド出力にコピー -->
     <None Include="..\MCP\**\*.*">
       <Link>MCP\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="waste_sorting_vision_prompt.md">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
