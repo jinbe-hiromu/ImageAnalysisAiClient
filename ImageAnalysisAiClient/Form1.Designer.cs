@@ -98,7 +98,7 @@ namespace ImageAnalysisAiClient
             btnSelectImage.Name = "btnSelectImage";
             btnSelectImage.Size = new Size(140, 35);
             btnSelectImage.TabIndex = 3;
-            btnSelectImage.Text = "画像を選択...";
+            btnSelectImage.Text = "カメラで撮影";
             btnSelectImage.UseVisualStyleBackColor = true;
             btnSelectImage.Click += btnSelectImage_Click;
             //
@@ -110,7 +110,7 @@ namespace ImageAnalysisAiClient
             lblImagePath.Name = "lblImagePath";
             lblImagePath.Size = new Size(628, 20);
             lblImagePath.TabIndex = 4;
-            lblImagePath.Text = "画像が選択されていません";
+            lblImagePath.Text = "撮影画像がありません";
             //
             // picImage
             //

@@ -1,6 +1,9 @@
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
 using OllamaSharp;
+using OpenCvSharp;
+using OpenCvSharp.Extensions;
+using System.Drawing.Imaging;
 
 
 namespace ImageAnalysisAiClient
@@ -11,7 +14,7 @@ namespace ImageAnalysisAiClient
         private const string AzureEndpoint = "https://taiseiishiyama-9692-resource.services.ai.azure.com/openai/v1";
         // TODO: Azure AI Foundry の実際の API キーを手動で入力してください。
         private static readonly string AzureApiKey = "YOUR_AZURE_AI_FOUNDRY_API_KEY";
-
+        //YOUR_AZURE_AI_FOUNDRY_API_KEY
         // ローカルで起動している Ollama サーバーに接続するチャットクライアント。
         // IChatClient インターフェイスを使用して、抽象化された方法でチャット機能を利用する。
         private IChatClient _chatClient;
@@ -133,38 +136,34 @@ namespace ImageAnalysisAiClient
             }
         }
 
-        // 「画像を選択」ボタン。エクスプローラー（OpenFileDialog）を開き、
-        // 選択された画像をプレビュー表示しつつ、VLM 送信用にバイト配列として保持する。
+        // 内蔵カメラから1枚撮影し、プレビュー表示と VLM 送信用の画像データを保持する。
         private void btnSelectImage_Click(object sender, EventArgs e)
         {
-            using var dialog = new OpenFileDialog
-            {
-                Title = "画像ファイルを選択してください",
-                Filter = "画像ファイル (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp)|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp|すべてのファイル (*.*)|*.*"
-            };
-
-            if (dialog.ShowDialog(this) != DialogResult.OK)
-            {
-                return;
-            }
-
             try
             {
-                var path = dialog.FileName;
+                using var capture = new VideoCapture(0);
+                if (!capture.IsOpened())
+                {
+                    throw new InvalidOperationException("カメラを開けませんでした。カメラが接続され、他のアプリで使用中でないことを確認してください。");
+                }
 
-                // VLM への送信用に画像バイトを読み込む。
-                _selectedImageBytes = File.ReadAllBytes(path);
-                _selectedImageMediaType = GetImageMediaType(path);
+                using var frame = new Mat();
+                if (!capture.Read(frame) || frame.Empty())
+                {
+                    throw new InvalidOperationException("カメラから画像を取得できませんでした。");
+                }
+
+                using var bitmap = BitmapConverter.ToBitmap(frame);
+                using var stream = new MemoryStream();
+                bitmap.Save(stream, ImageFormat.Png);
+
+                _selectedImageBytes = stream.ToArray();
+                _selectedImageMediaType = "image/png";
 
                 // 既存のプレビュー画像を破棄する。
                 picImage.Image?.Dispose();
-
-                // ファイルロックを避けるため、バイト配列から生成したうえでコピーを保持する。
-                using var ms = new MemoryStream(_selectedImageBytes);
-                using var loaded = Image.FromStream(ms);
-                picImage.Image = new Bitmap(loaded);
-
-                lblImagePath.Text = Path.GetFileName(path);
+                picImage.Image = new Bitmap(bitmap);
+                lblImagePath.Text = "内蔵カメラから撮影";
             }
             catch (Exception ex)
             {
@@ -172,24 +171,9 @@ namespace ImageAnalysisAiClient
                 _selectedImageMediaType = null;
                 picImage.Image?.Dispose();
                 picImage.Image = null;
-                lblImagePath.Text = "画像が選択されていません";
-                txbReceiveMessage.Text = $"画像の読み込みに失敗しました: {ex.Message}";
+                lblImagePath.Text = "撮影画像がありません";
+                txbReceiveMessage.Text = $"カメラ撮影に失敗しました: {ex.Message}";
             }
-        }
-
-        // 拡張子から画像の MIME タイプを判定する。
-        private static string GetImageMediaType(string path)
-        {
-            var ext = Path.GetExtension(path).ToLowerInvariant();
-            return ext switch
-            {
-                ".png" => "image/png",
-                ".jpg" or ".jpeg" => "image/jpeg",
-                ".gif" => "image/gif",
-                ".bmp" => "image/bmp",
-                ".webp" => "image/webp",
-                _ => "application/octet-stream"
-            };
         }
 
         private async void btnSend_Click(object sender, EventArgs e)
