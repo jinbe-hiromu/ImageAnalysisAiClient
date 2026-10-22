@@ -5,7 +5,6 @@ using OpenCvSharp;
 using OpenCvSharp.Extensions;
 using System.Diagnostics;
 using System.Drawing.Imaging;
-using System.Text.Json;
 
 
 namespace ImageAnalysisAiClient
@@ -352,37 +351,14 @@ namespace ImageAnalysisAiClient
 
         private static string LoadAzureApiKey()
         {
-            var settingsPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
-            if (!File.Exists(settingsPath))
-            {
-                throw new FileNotFoundException(
-                    "appsettings.json が見つかりません。アプリの出力フォルダーに配置してください。", settingsPath);
-            }
-
-            try
-            {
-                using var document = JsonDocument.Parse(File.ReadAllText(settingsPath));
-                if (!document.RootElement.TryGetProperty("Azure", out var azure) ||
-                    !azure.TryGetProperty("ApiKey", out var apiKeyElement))
-                {
-                    throw new InvalidOperationException(
-                        "appsettings.json に Azure.ApiKey が設定されていません。");
-                }
-
-                var apiKey = apiKeyElement.GetString();
-                if (string.IsNullOrWhiteSpace(apiKey))
-                {
-                    throw new InvalidOperationException(
-                        "appsettings.json の Azure.ApiKey が空です。");
-                }
-
-                return apiKey;
-            }
-            catch (JsonException ex)
+            var apiKey = Environment.GetEnvironmentVariable("AZURE_API_KEY");
+            if (string.IsNullOrWhiteSpace(apiKey))
             {
                 throw new InvalidOperationException(
-                    "appsettings.json のJSON形式が正しくありません。", ex);
+                    "環境変数 AZURE_API_KEY が設定されていません。Azure APIキーを設定してからアプリを起動してください。");
             }
+
+            return apiKey.Trim();
         }
 
         private async void btnSend_Click(object sender, EventArgs e)
