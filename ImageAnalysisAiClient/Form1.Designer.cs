@@ -39,16 +39,17 @@ namespace ImageAnalysisAiClient
             cmbModel = new ComboBox();
             lblImage = new Label();
             btnSelectImage = new Button();
-            btnStop = new Button();
             captureTimer = new System.Windows.Forms.Timer(components);
+            captureDurationTimer = new System.Windows.Forms.Timer(components);
             lblImagePath = new Label();
             picImage = new PictureBox();
             lblAdditionalInfo = new Label();
             txbAdditionalInfo = new TextBox();
             btnSend = new Button();
             lblReceiveMessage = new Label();
-            txbReceiveMessage = new TextBox();
+            webViewResults = new Microsoft.Web.WebView2.WinForms.WebView2();
             ((System.ComponentModel.ISupportInitialize)picImage).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)webViewResults).BeginInit();
             SuspendLayout();
             //
             // lblProvider
@@ -110,22 +111,15 @@ namespace ImageAnalysisAiClient
             btnSelectImage.UseVisualStyleBackColor = true;
             btnSelectImage.Click += btnSelectImage_Click;
             //
-            // btnStop
-            //
-            btnStop.Anchor = AnchorStyles.Top | AnchorStyles.Left;
-            btnStop.Enabled = false;
-            btnStop.Location = new Point(160, 80);
-            btnStop.Name = "btnStop";
-            btnStop.Size = new Size(140, 35);
-            btnStop.TabIndex = 4;
-            btnStop.Text = "停止";
-            btnStop.UseVisualStyleBackColor = true;
-            btnStop.Click += btnStop_Click;
-            //
             // captureTimer
             //
             captureTimer.Interval = 500;
             captureTimer.Tick += captureTimer_Tick;
+            //
+            // captureDurationTimer
+            //
+            captureDurationTimer.Interval = 3000;
+            captureDurationTimer.Tick += captureDurationTimer_Tick;
             //
             // lblImagePath
             //
@@ -171,11 +165,11 @@ namespace ImageAnalysisAiClient
             //
             btnSend.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             btnSend.Enabled = false;
-            btnSend.Location = new Point(12, 360);
+            btnSend.Location = new Point(350, 353);
             btnSend.Name = "btnSend";
-            btnSend.Size = new Size(140, 40);
+            btnSend.Size = new Size(140, 35);
             btnSend.TabIndex = 6;
-            btnSend.Text = "画像を解析";
+            btnSend.Text = "送信";
             btnSend.UseVisualStyleBackColor = true;
             btnSend.Click += btnSend_Click;
             //
@@ -188,16 +182,13 @@ namespace ImageAnalysisAiClient
             lblReceiveMessage.TabIndex = 7;
             lblReceiveMessage.Text = "解析結果";
             //
-            // txbReceiveMessage
+            // webViewResults
             //
-            txbReceiveMessage.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            txbReceiveMessage.Location = new Point(12, 433);
-            txbReceiveMessage.Multiline = true;
-            txbReceiveMessage.Name = "txbReceiveMessage";
-            txbReceiveMessage.ReadOnly = true;
-            txbReceiveMessage.ScrollBars = ScrollBars.Vertical;
-            txbReceiveMessage.Size = new Size(776, 215);
-            txbReceiveMessage.TabIndex = 8;
+            webViewResults.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            webViewResults.Location = new Point(12, 433);
+            webViewResults.Name = "webViewResults";
+            webViewResults.Size = new Size(776, 215);
+            webViewResults.TabIndex = 8;
             //
             // Form1
             //
@@ -205,14 +196,13 @@ namespace ImageAnalysisAiClient
             ClientSize = new Size(800, 660);
             Controls.Add(cmbProvider);
             Controls.Add(lblProvider);
-            Controls.Add(txbReceiveMessage);
+            Controls.Add(webViewResults);
             Controls.Add(lblReceiveMessage);
             Controls.Add(btnSend);
             Controls.Add(txbAdditionalInfo);
             Controls.Add(lblAdditionalInfo);
             Controls.Add(picImage);
             Controls.Add(lblImagePath);
-            Controls.Add(btnStop);
             Controls.Add(btnSelectImage);
             Controls.Add(lblImage);
             Controls.Add(cmbModel);
@@ -221,6 +211,7 @@ namespace ImageAnalysisAiClient
             Text = "ImageAnalysisAiClient";
             Load += Form1_Load;
             ((System.ComponentModel.ISupportInitialize)picImage).EndInit();
+            ((System.ComponentModel.ISupportInitialize)webViewResults).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
@@ -233,14 +224,14 @@ namespace ImageAnalysisAiClient
         private ComboBox cmbModel;
         private Label lblImage;
         private Button btnSelectImage;
-        private Button btnStop;
         private System.Windows.Forms.Timer captureTimer;
+        private System.Windows.Forms.Timer captureDurationTimer;
         private Label lblImagePath;
         private PictureBox picImage;
         private Label lblAdditionalInfo;
         private TextBox txbAdditionalInfo;
         private Button btnSend;
         private Label lblReceiveMessage;
-        private TextBox txbReceiveMessage;
+        private Microsoft.Web.WebView2.WinForms.WebView2 webViewResults;
     }
 }

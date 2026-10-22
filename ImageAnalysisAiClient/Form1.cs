@@ -1,10 +1,12 @@
 using Microsoft.Extensions.AI;
+using Markdig;
 using ModelContextProtocol.Client;
 using OllamaSharp;
 using OpenCvSharp;
 using OpenCvSharp.Extensions;
 using System.Diagnostics;
 using System.Drawing.Imaging;
+using System.Text;
 
 
 namespace ImageAnalysisAiClient
@@ -13,6 +15,11 @@ namespace ImageAnalysisAiClient
     {
         private const string AzureDeploymentName = "gpt-6-luna";
         private const string AzureEndpoint = "https://taiseiishiyama-9692-resource.services.ai.azure.com/openai/v1";
+        private static readonly TimeSpan CaptureDuration = TimeSpan.FromSeconds(3);
+        private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
+            .UseAdvancedExtensions()
+            .DisableHtml()
+            .Build();
         // TODO: Azure AI Foundry の実際の API キーを手動で入力してください。
         private static readonly string AzureApiKey = "YOUR_AZURE_AI_FOUNDRY_API_KEY";
         //YOUR_AZURE_AI_FOUNDRY_API_KEY
@@ -35,6 +42,8 @@ namespace ImageAnalysisAiClient
 
         // 現在の撮影セッションで取得した全画像（VLM への添付用）。
         private readonly List<byte[]> _capturedImages = [];
+        private readonly List<ChatMessage> _conversationHistory = [];
+        private readonly StringBuilder _resultMarkdown = new();
 
         // 連続取得中は同じカメラを使用する。
         private VideoCapture? _capture;
@@ -42,7 +51,9 @@ namespace ImageAnalysisAiClient
         private bool _startCaptureWhenReady;
         private bool _isCapturing;
         private bool _isClosing;
+        private bool _isResultViewReady;
         private Stopwatch? _startRequestStopwatch;
+        private Stopwatch? _captureStopwatch;
 
         public Form1()
         {
@@ -55,6 +66,24 @@ namespace ImageAnalysisAiClient
 
         private async void Form1_Load(object sender, EventArgs e)
         {
+            try
+            {
+                await webViewResults.EnsureCoreWebView2Async();
+                webViewResults.CoreWebView2.Settings.IsScriptEnabled = false;
+                _isResultViewReady = true;
+                RenderResultMarkdown();
+            }
+            catch (Exception ex)
+            {
+                lblReceiveMessage.Text = "解析結果（WebView2を初期化できませんでした）";
+                MessageBox.Show(
+                    this,
+                    $"解析結果の表示を初期化できませんでした。Microsoft Edge WebView2 Runtime がインストールされているか確認してください。\n\n{ex.Message}",
+                    "WebView2 の初期化エラー",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+
             _ = InitializeCameraAsync();
 
             await LoadListToolsAsync();
@@ -103,13 +132,13 @@ namespace ImageAnalysisAiClient
                 }
                 else
                 {
-                    txbReceiveMessage.Text =
-                        "利用可能なモデルが見つかりませんでした。Ollama が起動しているか、モデルが pull 済みか確認してください。";
+                    SetResultMarkdown(
+                        "利用可能なモデルが見つかりませんでした。Ollama が起動しているか、モデルが pull 済みか確認してください。");
                 }
             }
             catch (Exception ex)
             {
-                txbReceiveMessage.Text = $"モデル一覧の取得に失敗しました: {ex.Message}";
+                SetResultMarkdown($"モデル一覧の取得に失敗しました: {ex.Message}");
             }
         }
 
@@ -147,17 +176,19 @@ namespace ImageAnalysisAiClient
         // 開始直後に1枚取得し、その後は500msごとに取得する。
         private void btnSelectImage_Click(object sender, EventArgs e)
         {
-            if (_isCapturing)
+            if (_isCapturing || !btnSelectImage.Enabled)
             {
                 return;
             }
 
+            _conversationHistory.Clear();
+            SetResultMarkdown(string.Empty);
+            btnSend.Enabled = false;
             _startRequestStopwatch = Stopwatch.StartNew();
             if (_capture is null)
             {
                 _startCaptureWhenReady = true;
                 btnSelectImage.Enabled = false;
-                btnStop.Enabled = true;
                 btnSend.Enabled = false;
                 UpdateCaptureStatus("カメラ準備中。準備完了後に撮影を開始します");
 
@@ -217,10 +248,9 @@ namespace ImageAnalysisAiClient
                     _startCaptureWhenReady = false;
                     _startRequestStopwatch = null;
                     btnSelectImage.Enabled = true;
-                    btnStop.Enabled = false;
-                    btnSend.Enabled = _capturedImages.Count > 0;
+                    btnSend.Enabled = _isResultViewReady && _capturedImages.Count > 0;
                     UpdateCaptureStatus("カメラを準備できませんでした。開始ボタンで再試行できます");
-                    txbReceiveMessage.Text = $"カメラの準備に失敗しました: {ex.Message}";
+                    SetResultMarkdown($"カメラの準備に失敗しました: {ex.Message}");
                 }
             }
             finally
@@ -245,13 +275,14 @@ namespace ImageAnalysisAiClient
                 picImage.Image = null;
                 _isCapturing = true;
                 btnSelectImage.Enabled = false;
-                btnStop.Enabled = true;
-                UpdateCaptureStatus("取得中（500ms間隔）");
+                UpdateCaptureStatus("取得中（500ms間隔、3秒間）");
 
                 CaptureImage();
                 if (_isCapturing)
                 {
+                    _captureStopwatch = Stopwatch.StartNew();
                     captureTimer.Start();
+                    captureDurationTimer.Start();
                 }
             }
             catch (Exception ex)
@@ -262,6 +293,12 @@ namespace ImageAnalysisAiClient
 
         private void captureTimer_Tick(object? sender, EventArgs e)
         {
+            if (_captureStopwatch?.Elapsed >= CaptureDuration)
+            {
+                CompleteImageCapture();
+                return;
+            }
+
             try
             {
                 CaptureImage();
@@ -306,21 +343,27 @@ namespace ImageAnalysisAiClient
             }
         }
 
-        private void btnStop_Click(object sender, EventArgs e)
+        private void captureDurationTimer_Tick(object? sender, EventArgs e)
+        {
+            CompleteImageCapture();
+        }
+
+        private void CompleteImageCapture()
         {
             StopImageCapture();
-            UpdateCaptureStatus("停止中");
+            UpdateCaptureStatus("撮影完了");
         }
 
         private void StopImageCapture()
         {
             captureTimer.Stop();
+            captureDurationTimer.Stop();
             _isCapturing = false;
             _startCaptureWhenReady = false;
             _startRequestStopwatch = null;
+            _captureStopwatch = null;
             btnSelectImage.Enabled = true;
-            btnStop.Enabled = false;
-            btnSend.Enabled = _capturedImages.Count > 0;
+            btnSend.Enabled = _isResultViewReady && _capturedImages.Count > 0;
         }
 
         private void ReleaseCamera()
@@ -334,7 +377,7 @@ namespace ImageAnalysisAiClient
         {
             ReleaseCamera();
             UpdateCaptureStatus("撮影停止（取得済み画像を保持）");
-            txbReceiveMessage.Text = $"カメラ撮影に失敗しました: {ex.Message}";
+            SetResultMarkdown($"カメラ撮影に失敗しました: {ex.Message}");
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
@@ -356,48 +399,94 @@ namespace ImageAnalysisAiClient
         {
             if (_isCapturing || _startCaptureWhenReady)
             {
-                txbReceiveMessage.Text = "すべての画像を判別するには、先に停止ボタンを押してください。";
+                SetResultMarkdown("撮影が完了するまでお待ちください。");
                 return;
             }
 
-            // 解析中に撮影が続いても、対象はボタンを押した時点までに取得した全画像に固定する。
+            // 画像は最初の送信時だけ添付し、以降は補足情報を同じ会話に追加する。
             var images = _capturedImages.ToArray();
             var additionalInfo = txbAdditionalInfo.Text.Trim();
 
-            // 画像が未選択の場合は解析できない。
             if (images.Length == 0)
             {
-                txbReceiveMessage.Text = "開始ボタンを押して画像を取得してください。";
+                SetResultMarkdown("開始ボタンを押して画像を取得してください。");
+                return;
+            }
+
+            var isInitialMessage = _conversationHistory.Count == 0;
+            if (!isInitialMessage && string.IsNullOrWhiteSpace(additionalInfo))
+            {
+                SetResultMarkdown("再判定するための補足情報を入力してください。");
                 return;
             }
 
             // モデルが未選択のまま送信されないようにする。
             if (string.IsNullOrEmpty(_selectedModel))
             {
-                txbReceiveMessage.Text = "モデルを選択してください。";
+                SetResultMarkdown("モデルを選択してください。");
                 return;
             }
 
             var promptPath = Path.Combine(AppContext.BaseDirectory, "waste_sorting_vision_prompt.md");
             if (!File.Exists(promptPath))
             {
-                txbReceiveMessage.Text = "waste_sorting_vision_prompt.md が見つかりません。アプリの出力フォルダーを確認してください。";
+                SetResultMarkdown("waste_sorting_vision_prompt.md が見つかりません。アプリの出力フォルダーを確認してください。");
                 return;
             }
 
-            var systemPrompt = await File.ReadAllTextAsync(promptPath);
+            string? systemPrompt = null;
+            if (isInitialMessage)
+            {
+                systemPrompt = await File.ReadAllTextAsync(promptPath);
+            }
 
             // 送信中は二重送信を防ぐためボタンを無効化する。
             btnSend.Enabled = false;
-            txbReceiveMessage.Clear();
+            btnSelectImage.Enabled = false;
+            var displayPrompt = isInitialMessage
+                ? "撮影した画像の判定を依頼しました。"
+                : additionalInfo;
+            if (isInitialMessage && !string.IsNullOrWhiteSpace(additionalInfo))
+            {
+                displayPrompt += $"\n補足情報: {additionalInfo}";
+            }
 
+            AppendResultMarkdown(
+                $"{Environment.NewLine}### あなた{Environment.NewLine}{Environment.NewLine}{displayPrompt}{Environment.NewLine}{Environment.NewLine}### 判定{Environment.NewLine}{Environment.NewLine}");
+
+            var userPrompt = isInitialMessage
+                ? $"以下は500ms間隔で取得した連続画像です（全{images.Length}枚）。すべての画像を確認し、同じ物体が複数画像に写っている場合は重複して数えずに分別してください。"
+                : additionalInfo;
+            if (isInitialMessage && !string.IsNullOrWhiteSpace(additionalInfo))
+            {
+                userPrompt += $"\n\nユーザーからのゴミに関する補足情報:\n{additionalInfo}";
+            }
+
+            var userMessage = new ChatMessage(ChatRole.User, userPrompt);
+            if (isInitialMessage)
+            {
+                foreach (var image in images)
+                {
+                    userMessage.Contents.Add(new DataContent(image, "image/png"));
+                }
+            }
+
+            if (isInitialMessage)
+            {
+                _conversationHistory.Add(new ChatMessage(ChatRole.System, systemPrompt!));
+            }
+
+            _conversationHistory.Add(userMessage);
+            var assistantResponse = new StringBuilder();
+            var requestSucceeded = false;
             try
             {
+                txbAdditionalInfo.Enabled = false;
                 if (cmbProvider.SelectedIndex == 1 && _azureChatClient is null)
                 {
                     if (AzureApiKey == "YOUR_AZURE_AI_FOUNDRY_API_KEY")
                     {
-                        txbReceiveMessage.Text = "Form1.cs の AzureApiKey に Azure AI Foundry の API キーを入力してください。";
+                        AppendResultMarkdown("Azure AI Foundry の API キーが設定されていません。");
                         return;
                     }
 
@@ -419,36 +508,97 @@ namespace ImageAnalysisAiClient
                     ModelId = _selectedModel
                 };
 
-                // ユーザーメッセージに撮影セッションで取得した全画像を添付する。
-                var systemMessage = new ChatMessage(ChatRole.System, systemPrompt);
-                var userPrompt = $"以下は500ms間隔で取得した連続画像です（全{images.Length}枚）。すべての画像を確認し、同じ物体が複数画像に写っている場合は重複して数えずに分別してください。";
-                if (!string.IsNullOrWhiteSpace(additionalInfo))
-                {
-                    userPrompt += $"\n\nユーザーからのゴミに関する補足情報:\n{additionalInfo}";
-                }
-
-                var chatMessage = new ChatMessage(ChatRole.User, userPrompt);
-                foreach (var image in images)
-                {
-                    chatMessage.Contents.Add(new DataContent(image, "image/png"));
-                }
-
                 // IChatClient の GetStreamingResponseAsync を使用して、メッセージを送信し応答をストリーミングで受信する。
                 var activeChatClient = cmbProvider.SelectedIndex == 1 ? _azureChatClient! : _chatClient;
-                await foreach (var update in activeChatClient.GetStreamingResponseAsync([systemMessage, chatMessage], options))
+                var renderThrottle = Stopwatch.StartNew();
+                await foreach (var update in activeChatClient.GetStreamingResponseAsync(_conversationHistory, options))
                 {
-                    // 届いた断片を都度 txbReceiveMessage に追記して表示する。
-                    txbReceiveMessage.AppendText(update.Text);
+                    assistantResponse.Append(update.Text);
+                    if (renderThrottle.ElapsedMilliseconds >= 500)
+                    {
+                        RenderResultMarkdown(assistantResponse.ToString());
+                        renderThrottle.Restart();
+                    }
                 }
+
+                requestSucceeded = true;
             }
             catch (Exception ex)
             {
-                txbReceiveMessage.Text = $"エラー: {ex.Message}";
+                AppendResultMarkdown($"エラー: {ex.Message}{Environment.NewLine}");
             }
             finally
             {
-                btnSend.Enabled = _capture is null && _capturedImages.Count > 0;
+                txbAdditionalInfo.Enabled = true;
+                if (requestSucceeded)
+                {
+                    _conversationHistory.Add(new ChatMessage(ChatRole.Assistant, assistantResponse.ToString()));
+                    foreach (var imageContent in userMessage.Contents.OfType<DataContent>().ToArray())
+                    {
+                        userMessage.Contents.Remove(imageContent);
+                    }
+
+                    txbAdditionalInfo.Clear();
+                    AppendResultMarkdown($"{assistantResponse}{Environment.NewLine}{Environment.NewLine}");
+                }
+                else
+                {
+                    _conversationHistory.RemoveAt(_conversationHistory.Count - 1);
+                    if (_conversationHistory.Count == 1 && isInitialMessage)
+                    {
+                        _conversationHistory.Clear();
+                    }
+                }
+
+                btnSelectImage.Enabled = !_isCapturing && !_startCaptureWhenReady;
+                btnSend.Enabled = _isResultViewReady && btnSelectImage.Enabled && _capturedImages.Count > 0;
             }
+        }
+
+        private void SetResultMarkdown(string markdown)
+        {
+            _resultMarkdown.Clear();
+            _resultMarkdown.Append(markdown);
+            RenderResultMarkdown();
+        }
+
+        private void AppendResultMarkdown(string markdown)
+        {
+            _resultMarkdown.Append(markdown);
+            RenderResultMarkdown();
+        }
+
+        private void RenderResultMarkdown(string? pendingAssistantResponse = null)
+        {
+            if (!_isResultViewReady || webViewResults.IsDisposed)
+            {
+                return;
+            }
+
+            var markdown = pendingAssistantResponse is null
+                ? _resultMarkdown.ToString()
+                : string.Concat(_resultMarkdown, pendingAssistantResponse);
+            var renderedMarkdown = Markdown.ToHtml(markdown, MarkdownPipeline);
+            var html = $$"""
+                <!DOCTYPE html>
+                <html lang="ja">
+                <head>
+                    <meta charset="utf-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1">
+                    <style>
+                        body { font-family: "Segoe UI", sans-serif; color: #24292f; padding: 12px; line-height: 1.6; }
+                        table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+                        th, td { border: 1px solid #d0d7de; padding: 8px 12px; text-align: left; vertical-align: top; }
+                        th { background: #f6f8fa; }
+                        tr:nth-child(even) { background: #f6f8fa; }
+                        pre { overflow-x: auto; padding: 12px; background: #f6f8fa; }
+                    </style>
+                </head>
+                <body>{{renderedMarkdown}}</body>
+                </html>
+                """;
+
+            webViewResults.NavigateToString(html);
         }
     }
 }
