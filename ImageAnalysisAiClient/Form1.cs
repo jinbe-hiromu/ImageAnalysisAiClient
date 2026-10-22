@@ -3,6 +3,7 @@ using ModelContextProtocol.Client;
 using OllamaSharp;
 using OpenCvSharp;
 using OpenCvSharp.Extensions;
+using System.Diagnostics;
 using System.Drawing.Imaging;
 
 
@@ -32,11 +33,16 @@ namespace ImageAnalysisAiClient
 
         // MCP サーバから取得したツールのリスト
 
-        // 選択中の画像データ（VLM への添付用）。未選択時は null。
-        private byte[]? _selectedImageBytes;
+        // 現在の撮影セッションで取得した全画像（VLM への添付用）。
+        private readonly List<byte[]> _capturedImages = [];
 
-        // 選択中の画像の MIME タイプ（例: image/png）。
-        private string? _selectedImageMediaType;
+        // 連続取得中は同じカメラを使用する。
+        private VideoCapture? _capture;
+        private Task<VideoCapture>? _cameraInitializationTask;
+        private bool _startCaptureWhenReady;
+        private bool _isCapturing;
+        private bool _isClosing;
+        private Stopwatch? _startRequestStopwatch;
 
         public Form1()
         {
@@ -49,6 +55,8 @@ namespace ImageAnalysisAiClient
 
         private async void Form1_Load(object sender, EventArgs e)
         {
+            _ = InitializeCameraAsync();
+
             await LoadListToolsAsync();
 
             if (cmbProvider.SelectedIndex == 0)
@@ -136,55 +144,230 @@ namespace ImageAnalysisAiClient
             }
         }
 
-        // 内蔵カメラから1枚撮影し、プレビュー表示と VLM 送信用の画像データを保持する。
+        // 開始直後に1枚取得し、その後は500msごとに取得する。
         private void btnSelectImage_Click(object sender, EventArgs e)
         {
-            try
+            if (_isCapturing)
             {
-                using var capture = new VideoCapture(0);
+                return;
+            }
+
+            _startRequestStopwatch = Stopwatch.StartNew();
+            if (_capture is null)
+            {
+                _startCaptureWhenReady = true;
+                btnSelectImage.Enabled = false;
+                btnStop.Enabled = true;
+                btnSend.Enabled = false;
+                UpdateCaptureStatus("カメラ準備中。準備完了後に撮影を開始します");
+
+                if (_cameraInitializationTask is null)
+                {
+                    _ = InitializeCameraAsync();
+                }
+
+                return;
+            }
+
+            StartImageCapture();
+        }
+
+        private async Task InitializeCameraAsync()
+        {
+            if (_cameraInitializationTask is not null || _capture is not null || _isClosing)
+            {
+                return;
+            }
+
+            UpdateCaptureStatus("カメラを準備中...");
+            var initializationStopwatch = Stopwatch.StartNew();
+            _cameraInitializationTask = Task.Run(() =>
+            {
+                var capture = new VideoCapture(0);
                 if (!capture.IsOpened())
                 {
+                    capture.Dispose();
                     throw new InvalidOperationException("カメラを開けませんでした。カメラが接続され、他のアプリで使用中でないことを確認してください。");
                 }
 
-                using var frame = new Mat();
-                if (!capture.Read(frame) || frame.Empty())
+                return capture;
+            });
+
+            try
+            {
+                var initializedCapture = await _cameraInitializationTask;
+                if (_isClosing || IsDisposed)
                 {
-                    throw new InvalidOperationException("カメラから画像を取得できませんでした。");
+                    initializedCapture.Dispose();
+                    return;
                 }
 
-                using var bitmap = BitmapConverter.ToBitmap(frame);
-                using var stream = new MemoryStream();
-                bitmap.Save(stream, ImageFormat.Png);
+                _capture = initializedCapture;
+                UpdateCaptureStatus($"カメラ準備完了（{initializationStopwatch.ElapsedMilliseconds}ms）");
 
-                _selectedImageBytes = stream.ToArray();
-                _selectedImageMediaType = "image/png";
-
-                // 既存のプレビュー画像を破棄する。
-                picImage.Image?.Dispose();
-                picImage.Image = new Bitmap(bitmap);
-                lblImagePath.Text = "内蔵カメラから撮影";
+                if (_startCaptureWhenReady)
+                {
+                    StartImageCapture();
+                }
             }
             catch (Exception ex)
             {
-                _selectedImageBytes = null;
-                _selectedImageMediaType = null;
+                if (!_isClosing && !IsDisposed)
+                {
+                    _startCaptureWhenReady = false;
+                    _startRequestStopwatch = null;
+                    btnSelectImage.Enabled = true;
+                    btnStop.Enabled = false;
+                    btnSend.Enabled = _capturedImages.Count > 0;
+                    UpdateCaptureStatus("カメラを準備できませんでした。開始ボタンで再試行できます");
+                    txbReceiveMessage.Text = $"カメラの準備に失敗しました: {ex.Message}";
+                }
+            }
+            finally
+            {
+                _cameraInitializationTask = null;
+            }
+        }
+
+        private void StartImageCapture()
+        {
+            if (_capture is null || _isCapturing || _isClosing)
+            {
+                return;
+            }
+
+            try
+            {
+                _startCaptureWhenReady = false;
+                _capturedImages.Clear();
+                btnSend.Enabled = false;
                 picImage.Image?.Dispose();
                 picImage.Image = null;
-                lblImagePath.Text = "撮影画像がありません";
-                txbReceiveMessage.Text = $"カメラ撮影に失敗しました: {ex.Message}";
+                _isCapturing = true;
+                btnSelectImage.Enabled = false;
+                btnStop.Enabled = true;
+                UpdateCaptureStatus("取得中（500ms間隔）");
+
+                CaptureImage();
+                if (_isCapturing)
+                {
+                    captureTimer.Start();
+                }
             }
+            catch (Exception ex)
+            {
+                HandleCaptureError(ex);
+            }
+        }
+
+        private void captureTimer_Tick(object? sender, EventArgs e)
+        {
+            try
+            {
+                CaptureImage();
+            }
+            catch (Exception ex)
+            {
+                HandleCaptureError(ex);
+            }
+        }
+
+        private void CaptureImage()
+        {
+            if (_capture is null)
+            {
+                return;
+            }
+
+            using var frame = new Mat();
+            if (!_capture.Read(frame) || frame.Empty())
+            {
+                throw new InvalidOperationException("カメラから画像を取得できませんでした。");
+            }
+
+            using var bitmap = BitmapConverter.ToBitmap(frame);
+            using var stream = new MemoryStream();
+            bitmap.Save(stream, ImageFormat.Png);
+
+            _capturedImages.Add(stream.ToArray());
+
+            // 既存のプレビュー画像を破棄する。
+            picImage.Image?.Dispose();
+            picImage.Image = new Bitmap(bitmap);
+            if (_startRequestStopwatch is not null)
+            {
+                var elapsed = _startRequestStopwatch.ElapsedMilliseconds;
+                _startRequestStopwatch = null;
+                UpdateCaptureStatus($"取得中（500ms間隔、開始から初回画像まで{elapsed}ms）");
+            }
+            else
+            {
+                UpdateCaptureStatus("取得中（500ms間隔）");
+            }
+        }
+
+        private void btnStop_Click(object sender, EventArgs e)
+        {
+            StopImageCapture();
+            UpdateCaptureStatus("停止中");
+        }
+
+        private void StopImageCapture()
+        {
+            captureTimer.Stop();
+            _isCapturing = false;
+            _startCaptureWhenReady = false;
+            _startRequestStopwatch = null;
+            btnSelectImage.Enabled = true;
+            btnStop.Enabled = false;
+            btnSend.Enabled = _capturedImages.Count > 0;
+        }
+
+        private void ReleaseCamera()
+        {
+            StopImageCapture();
+            _capture?.Dispose();
+            _capture = null;
+        }
+
+        private void HandleCaptureError(Exception ex)
+        {
+            ReleaseCamera();
+            UpdateCaptureStatus("撮影停止（取得済み画像を保持）");
+            txbReceiveMessage.Text = $"カメラ撮影に失敗しました: {ex.Message}";
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            base.OnFormClosing(e);
+            if (!e.Cancel)
+            {
+                _isClosing = true;
+                ReleaseCamera();
+            }
+        }
+
+        private void UpdateCaptureStatus(string status)
+        {
+            lblImagePath.Text = $"取得枚数: {_capturedImages.Count}枚 - {status}";
         }
 
         private async void btnSend_Click(object sender, EventArgs e)
         {
-            // 画像が選択されているかどうか。
-            var hasImage = _selectedImageBytes is not null && _selectedImageMediaType is not null;
+            if (_isCapturing || _startCaptureWhenReady)
+            {
+                txbReceiveMessage.Text = "すべての画像を判別するには、先に停止ボタンを押してください。";
+                return;
+            }
+
+            // 解析中に撮影が続いても、対象はボタンを押した時点までに取得した全画像に固定する。
+            var images = _capturedImages.ToArray();
+            var additionalInfo = txbAdditionalInfo.Text.Trim();
 
             // 画像が未選択の場合は解析できない。
-            if (!hasImage)
+            if (images.Length == 0)
             {
-                txbReceiveMessage.Text = "画像を選択してください。";
+                txbReceiveMessage.Text = "開始ボタンを押して画像を取得してください。";
                 return;
             }
 
@@ -236,10 +419,19 @@ namespace ImageAnalysisAiClient
                     ModelId = _selectedModel
                 };
 
-                // ユーザーメッセージを構築し、選択された画像を添付する。
+                // ユーザーメッセージに撮影セッションで取得した全画像を添付する。
                 var systemMessage = new ChatMessage(ChatRole.System, systemPrompt);
-                var chatMessage = new ChatMessage(ChatRole.User, "添付画像を指示に従って分別してください。");
-                chatMessage.Contents.Add(new DataContent(_selectedImageBytes!, _selectedImageMediaType!));
+                var userPrompt = $"以下は500ms間隔で取得した連続画像です（全{images.Length}枚）。すべての画像を確認し、同じ物体が複数画像に写っている場合は重複して数えずに分別してください。";
+                if (!string.IsNullOrWhiteSpace(additionalInfo))
+                {
+                    userPrompt += $"\n\nユーザーからのゴミに関する補足情報:\n{additionalInfo}";
+                }
+
+                var chatMessage = new ChatMessage(ChatRole.User, userPrompt);
+                foreach (var image in images)
+                {
+                    chatMessage.Contents.Add(new DataContent(image, "image/png"));
+                }
 
                 // IChatClient の GetStreamingResponseAsync を使用して、メッセージを送信し応答をストリーミングで受信する。
                 var activeChatClient = cmbProvider.SelectedIndex == 1 ? _azureChatClient! : _chatClient;
@@ -255,7 +447,7 @@ namespace ImageAnalysisAiClient
             }
             finally
             {
-                btnSend.Enabled = true;
+                btnSend.Enabled = _capture is null && _capturedImages.Count > 0;
             }
         }
     }

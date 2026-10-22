@@ -13,9 +13,13 @@ namespace ImageAnalysisAiClient
         /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
         protected override void Dispose(bool disposing)
         {
-            if (disposing && (components != null))
+            if (disposing)
             {
-                components.Dispose();
+                _isClosing = true;
+                ReleaseCamera();
+                picImage.Image?.Dispose();
+                picImage.Image = null;
+                components?.Dispose();
             }
             base.Dispose(disposing);
         }
@@ -35,8 +39,12 @@ namespace ImageAnalysisAiClient
             cmbModel = new ComboBox();
             lblImage = new Label();
             btnSelectImage = new Button();
+            btnStop = new Button();
+            captureTimer = new System.Windows.Forms.Timer(components);
             lblImagePath = new Label();
             picImage = new PictureBox();
+            lblAdditionalInfo = new Label();
+            txbAdditionalInfo = new TextBox();
             btnSend = new Button();
             lblReceiveMessage = new Label();
             txbReceiveMessage = new TextBox();
@@ -98,19 +106,36 @@ namespace ImageAnalysisAiClient
             btnSelectImage.Name = "btnSelectImage";
             btnSelectImage.Size = new Size(140, 35);
             btnSelectImage.TabIndex = 3;
-            btnSelectImage.Text = "カメラで撮影";
+            btnSelectImage.Text = "開始";
             btnSelectImage.UseVisualStyleBackColor = true;
             btnSelectImage.Click += btnSelectImage_Click;
+            //
+            // btnStop
+            //
+            btnStop.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            btnStop.Enabled = false;
+            btnStop.Location = new Point(160, 80);
+            btnStop.Name = "btnStop";
+            btnStop.Size = new Size(140, 35);
+            btnStop.TabIndex = 4;
+            btnStop.Text = "停止";
+            btnStop.UseVisualStyleBackColor = true;
+            btnStop.Click += btnStop_Click;
+            //
+            // captureTimer
+            //
+            captureTimer.Interval = 500;
+            captureTimer.Tick += captureTimer_Tick;
             //
             // lblImagePath
             //
             lblImagePath.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             lblImagePath.AutoEllipsis = true;
-            lblImagePath.Location = new Point(160, 88);
+            lblImagePath.Location = new Point(308, 88);
             lblImagePath.Name = "lblImagePath";
-            lblImagePath.Size = new Size(628, 20);
-            lblImagePath.TabIndex = 4;
-            lblImagePath.Text = "撮影画像がありません";
+            lblImagePath.Size = new Size(480, 20);
+            lblImagePath.TabIndex = 5;
+            lblImagePath.Text = "取得枚数: 0枚 - 停止中";
             //
             // picImage
             //
@@ -123,9 +148,29 @@ namespace ImageAnalysisAiClient
             picImage.TabIndex = 5;
             picImage.TabStop = false;
             //
+            // lblAdditionalInfo
+            //
+            lblAdditionalInfo.AutoSize = true;
+            lblAdditionalInfo.Location = new Point(350, 125);
+            lblAdditionalInfo.Name = "lblAdditionalInfo";
+            lblAdditionalInfo.Size = new Size(100, 15);
+            lblAdditionalInfo.TabIndex = 6;
+            lblAdditionalInfo.Text = "ゴミの補足情報（任意）";
+            //
+            // txbAdditionalInfo
+            //
+            txbAdditionalInfo.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            txbAdditionalInfo.Location = new Point(350, 147);
+            txbAdditionalInfo.Multiline = true;
+            txbAdditionalInfo.Name = "txbAdditionalInfo";
+            txbAdditionalInfo.ScrollBars = ScrollBars.Vertical;
+            txbAdditionalInfo.Size = new Size(438, 198);
+            txbAdditionalInfo.TabIndex = 7;
+            //
             // btnSend
             //
             btnSend.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            btnSend.Enabled = false;
             btnSend.Location = new Point(12, 360);
             btnSend.Name = "btnSend";
             btnSend.Size = new Size(140, 40);
@@ -163,8 +208,11 @@ namespace ImageAnalysisAiClient
             Controls.Add(txbReceiveMessage);
             Controls.Add(lblReceiveMessage);
             Controls.Add(btnSend);
+            Controls.Add(txbAdditionalInfo);
+            Controls.Add(lblAdditionalInfo);
             Controls.Add(picImage);
             Controls.Add(lblImagePath);
+            Controls.Add(btnStop);
             Controls.Add(btnSelectImage);
             Controls.Add(lblImage);
             Controls.Add(cmbModel);
@@ -185,8 +233,12 @@ namespace ImageAnalysisAiClient
         private ComboBox cmbModel;
         private Label lblImage;
         private Button btnSelectImage;
+        private Button btnStop;
+        private System.Windows.Forms.Timer captureTimer;
         private Label lblImagePath;
         private PictureBox picImage;
+        private Label lblAdditionalInfo;
+        private TextBox txbAdditionalInfo;
         private Button btnSend;
         private Label lblReceiveMessage;
         private TextBox txbReceiveMessage;
