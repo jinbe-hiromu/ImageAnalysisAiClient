@@ -20,9 +20,7 @@ namespace ImageAnalysisAiClient
             .UseAdvancedExtensions()
             .DisableHtml()
             .Build();
-        // TODO: Azure AI Foundry の実際の API キーを手動で入力してください。
-        private static readonly string AzureApiKey = "YOUR_AZURE_AI_FOUNDRY_API_KEY";
-        //YOUR_AZURE_AI_FOUNDRY_API_KEY
+
         // ローカルで起動している Ollama サーバーに接続するチャットクライアント。
         // IChatClient インターフェイスを使用して、抽象化された方法でチャット機能を利用する。
         private IChatClient _chatClient;
@@ -395,6 +393,18 @@ namespace ImageAnalysisAiClient
             lblImagePath.Text = $"取得枚数: {_capturedImages.Count}枚 - {status}";
         }
 
+        private static string LoadAzureApiKey()
+        {
+            var apiKey = Environment.GetEnvironmentVariable("AZURE_API_KEY");
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                throw new InvalidOperationException(
+                    "環境変数 AZURE_API_KEY が設定されていません。Azure APIキーを設定してからアプリを起動してください。");
+            }
+
+            return apiKey.Trim();
+        }
+
         private async void btnSend_Click(object sender, EventArgs e)
         {
             if (_isCapturing || _startCaptureWhenReady)
@@ -484,15 +494,11 @@ namespace ImageAnalysisAiClient
                 txbAdditionalInfo.Enabled = false;
                 if (cmbProvider.SelectedIndex == 1 && _azureChatClient is null)
                 {
-                    if (AzureApiKey == "YOUR_AZURE_AI_FOUNDRY_API_KEY")
-                    {
-                        AppendResultMarkdown("Azure AI Foundry の API キーが設定されていません。");
-                        return;
-                    }
+                    var azureApiKey = LoadAzureApiKey();
 
                     var openAiChatClient = new OpenAI.Chat.ChatClient(
                         AzureDeploymentName,
-                        new System.ClientModel.ApiKeyCredential(AzureApiKey),
+                        new System.ClientModel.ApiKeyCredential(azureApiKey),
                         new OpenAI.OpenAIClientOptions { Endpoint = new Uri(AzureEndpoint) })
                         .AsIChatClient();
 
