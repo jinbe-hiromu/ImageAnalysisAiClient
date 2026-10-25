@@ -84,8 +84,6 @@ namespace ImageAnalysisAiClient
 
             _ = InitializeCameraAsync();
 
-            await LoadListToolsAsync();
-
             if (cmbProvider.SelectedIndex == 0)
             {
                 await LoadModelsAsync();
@@ -137,27 +135,6 @@ namespace ImageAnalysisAiClient
             catch (Exception ex)
             {
                 SetResultMarkdown($"モデル一覧の取得に失敗しました: {ex.Message}");
-            }
-        }
-
-        private async Task LoadListToolsAsync()
-        {
-            try
-            {
-                var transport = new HttpClientTransport(new()
-                {
-                    Endpoint = new Uri("http://127.0.0.1:5050/mcp")
-                });
-
-                _mcpClient = await McpClient.CreateAsync(transport);
-
-                _tools = await _mcpClient.ListToolsAsync();
-
-                _chatClient = new ChatClientBuilder(_ollamaClient).UseFunctionInvocation().Build();
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"MCP ツールの読み込みに失敗しました: {ex.Message}");
             }
         }
 
