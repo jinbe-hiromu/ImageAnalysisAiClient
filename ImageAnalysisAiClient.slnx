@@ -1,3 +1,4 @@
 <Solution>
+  <Project Path="ImageAnalysisAiClient.Web/ImageAnalysisAiClient.Web.csproj" />
   <Project Path="ImageAnalysisAiClient/ImageAnalysisAiClient.csproj" />
 </Solution>

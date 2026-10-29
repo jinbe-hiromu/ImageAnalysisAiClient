@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ImageAnalysisAiClient</title>
+    <link rel="stylesheet" href="css/site.css">
+</head>
+<body>
+    <header class="app-header">
+        <h1 id="title">ImageAnalysisAiClient</h1>
+    </header>
+
+    <main class="container">
+        <section class="row top-row">
+            <div class="field grow">
+                <label for="cmbModel">モデル</label>
+                <select id="cmbModel"></select>
+            </div>
+            <div class="field provider">
+                <label for="cmbProvider">接続先</label>
+                <select id="cmbProvider">
+                    <option value="ollama" selected>Local (Ollama)</option>
+                    <option value="azure">Azure AI Foundry</option>
+                </select>
+            </div>
+        </section>
+
+        <section class="field">
+            <label>画像</label>
+            <div class="row capture-row">
+                <button id="btnSelectImage" type="button" class="btn primary">開始</button>
+                <span id="lblImagePath" class="status">取得枚数: 0枚 - 停止中</span>
+            </div>
+        </section>
+
+        <section class="row middle-row">
+            <div class="preview">
+                <video id="video" autoplay playsinline muted></video>
+                <img id="picImage" alt="撮影画像">
+                <canvas id="canvas" hidden></canvas>
+            </div>
+            <div class="field grow">
+                <label for="txbAdditionalInfo">ゴミの補足情報（任意）</label>
+                <textarea id="txbAdditionalInfo" rows="8"></textarea>
+                <div>
+                    <button id="btnSend" type="button" class="btn" disabled>送信</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="field results-section">
+            <label id="lblReceiveMessage">解析結果</label>
+            <div id="results" class="results"></div>
+        </section>
+    </main>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
