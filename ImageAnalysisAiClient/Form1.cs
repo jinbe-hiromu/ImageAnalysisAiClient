@@ -16,6 +16,7 @@ namespace ImageAnalysisAiClient
         private const string AzureDeploymentName = "gpt-6-luna";
         private const string AzureEndpoint = "https://taiseiishiyama-9692-resource.services.ai.azure.com/openai/v1";
         private static readonly TimeSpan CaptureDuration = TimeSpan.FromSeconds(3);
+        private const string UndeterminedImageFolderName = "判定不能画像";
         private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
             .UseAdvancedExtensions()
             .DisableHtml()
@@ -516,6 +517,18 @@ namespace ImageAnalysisAiClient
                 if (requestSucceeded)
                 {
                     _conversationHistory.Add(new ChatMessage(ChatRole.Assistant, assistantResponse.ToString()));
+                    if (isInitialMessage && IsUndeterminedResult(assistantResponse.ToString()))
+                    {
+                        try
+                        {
+                            SaveSharpestUndeterminedImage(images);
+                        }
+                        catch (Exception ex)
+                        {
+                            AppendResultMarkdown($"判定不能画像の保存に失敗しました: {ex.Message}{Environment.NewLine}");
+                        }
+                    }
+
                     foreach (var imageContent in userMessage.Contents.OfType<DataContent>().ToArray())
                     {
                         userMessage.Contents.Remove(imageContent);
@@ -536,6 +549,47 @@ namespace ImageAnalysisAiClient
                 btnSelectImage.Enabled = !_isCapturing && !_startCaptureWhenReady;
                 btnSend.Enabled = _isResultViewReady && btnSelectImage.Enabled && _capturedImages.Count > 0;
             }
+        }
+
+        private static bool IsUndeterminedResult(string response)
+        {
+            return response.Contains("判定不可", StringComparison.OrdinalIgnoreCase)
+                || response.Contains("判定不能", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void SaveSharpestUndeterminedImage(IReadOnlyList<byte[]> images)
+        {
+            if (images.Count == 0)
+            {
+                return;
+            }
+
+            var sharpestImage = images
+                .Select(image => new { Image = image, Score = CalculateSharpness(image) })
+                .MaxBy(candidate => candidate.Score);
+            if (sharpestImage is null)
+            {
+                return;
+            }
+
+            var folderPath = Path.Combine(AppContext.BaseDirectory, UndeterminedImageFolderName);
+            Directory.CreateDirectory(folderPath);
+            var fileName = $"{DateTime.Now:yyyyMMdd_HHmmss_fff}.png";
+            File.WriteAllBytes(Path.Combine(folderPath, fileName), sharpestImage.Image);
+        }
+
+        private static double CalculateSharpness(byte[] image)
+        {
+            using var source = Cv2.ImDecode(image, ImreadModes.Grayscale);
+            if (source.Empty())
+            {
+                return double.MinValue;
+            }
+
+            using var laplacian = new Mat();
+            Cv2.Laplacian(source, laplacian, MatType.CV_64F);
+            Cv2.MeanStdDev(laplacian, out _, out var standardDeviation);
+            return standardDeviation.Val0 * standardDeviation.Val0;
         }
 
         private void SetResultMarkdown(string markdown)
