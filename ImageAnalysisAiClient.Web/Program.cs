@@ -9,6 +9,7 @@ using OpenAI;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton(_ => new OllamaApiClient(new Uri(builder.Configuration["Ollama:Endpoint"] ?? "http://127.0.0.1:11434")));
 builder.Services.AddSingleton<AzureChatClientProvider>();
+builder.Services.AddSingleton<WasteCatalogReader>();
 
 var app = builder.Build();
 
@@ -59,6 +60,7 @@ app.MapPost("/api/analyze", async (
     HttpContext context,
     OllamaApiClient ollama,
     AzureChatClientProvider azureProvider,
+    WasteCatalogReader catalogReader,
     ILogger<Program> logger) =>
 {
     var cancellationToken = context.RequestAborted;
@@ -90,15 +92,22 @@ app.MapPost("/api/analyze", async (
         return Results.BadRequest("再判定するための補足情報を入力してください。");
     }
 
-    var promptPath = Path.Combine(AppContext.BaseDirectory, "waste_sorting_vision_prompt.md");
-    if (!File.Exists(promptPath))
+    string systemPrompt;
+    try
     {
-        return Results.Problem("waste_sorting_vision_prompt.md が見つかりません。");
+        var catalog = await catalogReader.ReadAsync(
+            app.Configuration["WasteCatalog:ExcelPath"], app.Environment.ContentRootPath, cancellationToken);
+        systemPrompt = new WastePromptBuilder().Build(catalog);
+    }
+    catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+    {
+        logger.LogError(ex, "Excelの分別索引の読み取りに失敗しました。");
+        return Results.Problem($"Excelの分別索引の読み取りに失敗しました: {ex.Message}", statusCode: StatusCodes.Status500InternalServerError);
     }
 
     var messages = new List<ChatMessage>
     {
-        new(ChatRole.System, await File.ReadAllTextAsync(promptPath, cancellationToken))
+        new(ChatRole.System, systemPrompt)
     };
     foreach (var item in history)
     {
