@@ -54,6 +54,7 @@ app.MapGet("/api/models", async (string provider, OllamaApiClient ollama, Cancel
 app.MapPost("/api/markdown", (MarkdownRequest request) =>
     Results.Content(Markdown.ToHtml(request.Markdown ?? string.Empty, markdownPipeline), "text/html; charset=utf-8"));
 
+// TODO Excelはハッシュ計算し、変更があった場合のみ再解析する
 app.MapPost("/api/analyze", async (
     AnalyzeRequest request,
     HttpContext context,
@@ -90,15 +91,22 @@ app.MapPost("/api/analyze", async (
         return Results.BadRequest("再判定するための補足情報を入力してください。");
     }
 
-    var promptPath = Path.Combine(AppContext.BaseDirectory, "waste_sorting_vision_prompt.md");
-    if (!File.Exists(promptPath))
+    string systemPrompt;
+    try
     {
-        return Results.Problem("waste_sorting_vision_prompt.md が見つかりません。");
+        var reader = new WasteCatalogReader(app.Configuration["WasteCatalog:ExcelPath"], app.Environment.ContentRootPath);
+        var catalog = await reader.ReadAsync(cancellationToken);
+        systemPrompt = new WastePromptBuilder().Build(catalog);
+    }
+    catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+    {
+        logger.LogError(ex, "Excelの分別索引の読み取りに失敗しました。");
+        return Results.Problem($"Excelの分別索引の読み取りに失敗しました: {ex.Message}", statusCode: StatusCodes.Status500InternalServerError);
     }
 
     var messages = new List<ChatMessage>
     {
-        new(ChatRole.System, await File.ReadAllTextAsync(promptPath, cancellationToken))
+        new(ChatRole.System, systemPrompt)
     };
     foreach (var item in history)
     {
