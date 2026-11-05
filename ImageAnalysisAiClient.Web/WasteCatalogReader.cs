@@ -1,19 +1,53 @@
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml;
+using System.Security.Cryptography;
 
 namespace ImageAnalysisAiClient.Web;
 
-internal sealed class WasteCatalogReader(string? configuredPath, string contentRoot)
+internal sealed class WasteCatalogReader : IDisposable
 {
-    public async Task<IReadOnlyList<WasteCatalogEntry>> ReadAsync(CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(configuredPath))
-        {
-            throw new InvalidOperationException("WasteCatalog:ExcelPath が設定されていません。");
-        }
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private byte[]? _cachedHash;
+    private IReadOnlyList<WasteCatalogEntry>? _cachedEntries;
 
-        var data = await File.ReadAllBytesAsync(Path.GetFullPath(configuredPath, contentRoot), cancellationToken);
+    public async Task<IReadOnlyList<WasteCatalogEntry>> ReadAsync(
+        string? configuredPath, string contentRoot, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (string.IsNullOrWhiteSpace(configuredPath))
+            {
+                throw new InvalidOperationException("WasteCatalog:ExcelPath が設定されていません。");
+            }
+
+            var data = await File.ReadAllBytesAsync(Path.GetFullPath(configuredPath, contentRoot), cancellationToken);
+            var hash = SHA256.HashData(data);
+            if (_cachedHash is not null && _cachedHash.AsSpan().SequenceEqual(hash))
+            {
+                return _cachedEntries!;
+            }
+
+            var entries = Array.AsReadOnly(Parse(data).ToArray());
+            cancellationToken.ThrowIfCancellationRequested();
+            _cachedHash = hash;
+            _cachedEntries = entries;
+            return entries;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public void Dispose()
+    {
+        _gate.Dispose();
+    }
+
+    private static IReadOnlyList<WasteCatalogEntry> Parse(byte[] data)
+    {
         try
         {
             using var stream = new MemoryStream(data);

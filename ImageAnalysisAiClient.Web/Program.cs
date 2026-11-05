@@ -9,6 +9,7 @@ using OpenAI;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton(_ => new OllamaApiClient(new Uri(builder.Configuration["Ollama:Endpoint"] ?? "http://127.0.0.1:11434")));
 builder.Services.AddSingleton<AzureChatClientProvider>();
+builder.Services.AddSingleton<WasteCatalogReader>();
 
 var app = builder.Build();
 
@@ -54,12 +55,12 @@ app.MapGet("/api/models", async (string provider, OllamaApiClient ollama, Cancel
 app.MapPost("/api/markdown", (MarkdownRequest request) =>
     Results.Content(Markdown.ToHtml(request.Markdown ?? string.Empty, markdownPipeline), "text/html; charset=utf-8"));
 
-// TODO Excelはハッシュ計算し、変更があった場合のみ再解析する
 app.MapPost("/api/analyze", async (
     AnalyzeRequest request,
     HttpContext context,
     OllamaApiClient ollama,
     AzureChatClientProvider azureProvider,
+    WasteCatalogReader catalogReader,
     ILogger<Program> logger) =>
 {
     var cancellationToken = context.RequestAborted;
@@ -94,8 +95,8 @@ app.MapPost("/api/analyze", async (
     string systemPrompt;
     try
     {
-        var reader = new WasteCatalogReader(app.Configuration["WasteCatalog:ExcelPath"], app.Environment.ContentRootPath);
-        var catalog = await reader.ReadAsync(cancellationToken);
+        var catalog = await catalogReader.ReadAsync(
+            app.Configuration["WasteCatalog:ExcelPath"], app.Environment.ContentRootPath, cancellationToken);
         systemPrompt = new WastePromptBuilder().Build(catalog);
     }
     catch (Exception ex) when (ex is InvalidOperationException or InvalidDataException or IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)

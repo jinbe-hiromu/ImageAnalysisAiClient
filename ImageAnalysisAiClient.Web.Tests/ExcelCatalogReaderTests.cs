@@ -10,9 +10,9 @@ public class ExcelCatalogReaderTests
     [Fact]
     public async Task ReadAsync_RejectsMissingPath()
     {
-        var reader = new WasteCatalogReader(null, AppContext.BaseDirectory);
+        using var reader = new WasteCatalogReader();
 
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => reader.ReadAsync());
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => reader.ReadAsync(null, AppContext.BaseDirectory));
 
         Assert.Contains("WasteCatalog:ExcelPath", error.Message);
     }
@@ -20,9 +20,9 @@ public class ExcelCatalogReaderTests
     [Fact]
     public async Task ReadAsync_RejectsMissingFile()
     {
-        var reader = new WasteCatalogReader($"{Guid.NewGuid():N}.xlsx", Path.GetTempPath());
+        using var reader = new WasteCatalogReader();
 
-        await Assert.ThrowsAsync<FileNotFoundException>(() => reader.ReadAsync());
+        await Assert.ThrowsAsync<FileNotFoundException>(() => reader.ReadAsync($"{Guid.NewGuid():N}.xlsx", Path.GetTempPath()));
     }
 
     [Fact]
@@ -32,9 +32,9 @@ public class ExcelCatalogReaderTests
         try
         {
             await File.WriteAllTextAsync(path, "not an Excel file");
-            var reader = new WasteCatalogReader(path, Path.GetTempPath());
+            using var reader = new WasteCatalogReader();
 
-            var error = await Assert.ThrowsAsync<InvalidDataException>(() => reader.ReadAsync());
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() => reader.ReadAsync(path, Path.GetTempPath()));
 
             Assert.Contains("Excel", error.Message);
         }
@@ -51,9 +51,9 @@ public class ExcelCatalogReaderTests
         workbook.AddSheet("一覧", ("B4", "廃棄物名"), ("C4", "廃棄先"),
             ("B5", "紙"), ("C5", "紙類"));
         workbook.Save();
-        var reader = new WasteCatalogReader(workbook.Path, Path.GetTempPath());
+        using var reader = new WasteCatalogReader();
 
-        var entries = await reader.ReadAsync();
+        var entries = await reader.ReadAsync(workbook.Path, Path.GetTempPath());
 
         Assert.Equal([new WasteCatalogEntry("紙", "紙類")], entries);
     }
@@ -70,7 +70,7 @@ public class ExcelCatalogReaderTests
             ("F8", "木"), ("G8", "一般ごみ"));
         workbook.Save();
 
-        var entries = await new WasteCatalogReader(workbook.Path, Path.GetTempPath()).ReadAsync();
+        var entries = await ReadAsync(workbook.Path, Path.GetTempPath());
 
         Assert.Equal([new("紙", "紙類"), new("缶", "金属"), new("木", "一般ごみ")], entries);
     }
@@ -87,7 +87,7 @@ public class ExcelCatalogReaderTests
             new Run(new Text("金")), new Run(new Text("属")), new PhoneticRun(new Text("キンゾク"))));
         workbook.Save();
 
-        var entries = await new WasteCatalogReader(workbook.Path, Path.GetTempPath()).ReadAsync();
+        var entries = await ReadAsync(workbook.Path, Path.GetTempPath());
 
         Assert.Equal([new WasteCatalogEntry("空き缶", "金属")], entries);
     }
@@ -100,7 +100,7 @@ public class ExcelCatalogReaderTests
         workbook.Save();
 
         var error = await Assert.ThrowsAsync<InvalidDataException>(
-            () => new WasteCatalogReader(workbook.Path, Path.GetTempPath()).ReadAsync());
+            () => ReadAsync(workbook.Path, Path.GetTempPath()));
 
         Assert.Contains("索引", error.Message);
     }
@@ -116,7 +116,7 @@ public class ExcelCatalogReaderTests
         workbook.Save();
 
         var error = await Assert.ThrowsAsync<InvalidDataException>(
-            () => new WasteCatalogReader(workbook.Path, Path.GetTempPath()).ReadAsync());
+            () => ReadAsync(workbook.Path, Path.GetTempPath()));
 
         Assert.Contains("対応", error.Message);
     }
@@ -131,7 +131,7 @@ public class ExcelCatalogReaderTests
         workbook.SetFormula("集計", "C2", "一覧!C2", "紙類");
         workbook.Save();
 
-        var entries = await new WasteCatalogReader(workbook.Path, Path.GetTempPath()).ReadAsync();
+        var entries = await ReadAsync(workbook.Path, Path.GetTempPath());
 
         Assert.Equal([new WasteCatalogEntry("紙", "紙類")], entries);
     }
@@ -146,7 +146,7 @@ public class ExcelCatalogReaderTests
         workbook.Save();
 
         var error = await Assert.ThrowsAsync<InvalidDataException>(
-            () => new WasteCatalogReader(workbook.Path, Path.GetTempPath()).ReadAsync());
+            () => ReadAsync(workbook.Path, Path.GetTempPath()));
 
         Assert.Contains("数式", error.Message);
     }
@@ -156,7 +156,7 @@ public class ExcelCatalogReaderTests
     {
         var path = Environment.GetEnvironmentVariable("WASTE_CATALOG_TEST_EXCEL")!;
 
-        var entries = await new WasteCatalogReader(path, Path.GetTempPath()).ReadAsync();
+        var entries = await ReadAsync(path, Path.GetTempPath());
 
         Assert.Equal(397, entries.Count);
         Assert.Contains(new WasteCatalogEntry("空き缶", "複合金属くず"), entries);
@@ -173,7 +173,7 @@ public class ExcelCatalogReaderTests
         workbook.Save();
 
         var error = await Assert.ThrowsAsync<InvalidDataException>(
-            () => new WasteCatalogReader(workbook.Path, Path.GetTempPath()).ReadAsync());
+            () => ReadAsync(workbook.Path, Path.GetTempPath()));
 
         Assert.Contains("見出し", error.Message);
     }
@@ -193,7 +193,7 @@ public class ExcelCatalogReaderTests
         }
 
         var error = await Assert.ThrowsAsync<InvalidDataException>(
-            () => new WasteCatalogReader(workbook.Path, Path.GetTempPath()).ReadAsync());
+            () => ReadAsync(workbook.Path, Path.GetTempPath()));
 
         Assert.Contains("Excel", error.Message);
     }
@@ -206,7 +206,7 @@ public class ExcelCatalogReaderTests
         workbook.RemoveRowIndexes("一覧");
         workbook.Save();
 
-        var entries = await new WasteCatalogReader(workbook.Path, Path.GetTempPath()).ReadAsync();
+        var entries = await ReadAsync(workbook.Path, Path.GetTempPath());
 
         Assert.Equal([new WasteCatalogEntry("紙", "紙類")], entries);
     }
@@ -218,9 +218,9 @@ public class ExcelCatalogReaderTests
         workbook.AddSheet("一覧", ("B1", "廃棄物名"), ("C1", "廃棄先"),
             ("B2", "紙"), ("C2", "紙類"), ("B3", "紙"), ("C3", "紙類"));
         workbook.Save();
-        var reader = new WasteCatalogReader(Path.GetFileName(workbook.Path), Path.GetDirectoryName(workbook.Path)!);
+        using var reader = new WasteCatalogReader();
 
-        var entries = await reader.ReadAsync();
+        var entries = await reader.ReadAsync(Path.GetFileName(workbook.Path), Path.GetDirectoryName(workbook.Path)!);
 
         Assert.Equal([new WasteCatalogEntry("紙", "紙類"), new WasteCatalogEntry("紙", "紙類")], entries);
     }
@@ -234,8 +234,14 @@ public class ExcelCatalogReaderTests
         workbook.Save();
 
         var error = await Assert.ThrowsAsync<InvalidDataException>(
-            () => new WasteCatalogReader(workbook.Path, Path.GetTempPath()).ReadAsync());
+            () => ReadAsync(workbook.Path, Path.GetTempPath()));
 
         Assert.Contains("見出し", error.Message);
+    }
+
+    private static async Task<IReadOnlyList<WasteCatalogEntry>> ReadAsync(string? path, string contentRoot)
+    {
+        using var reader = new WasteCatalogReader();
+        return await reader.ReadAsync(path, contentRoot);
     }
 }

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using ImageAnalysisAiClient.Web;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -205,6 +206,49 @@ public class AnalyzeEndpointTests
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Analyze_ReusesSharedCacheAndDetectsReplacement()
+    {
+        using var workbook = new ExcelTestWorkbook();
+        workbook.AddSheet("一覧", ("B1", "廃棄物名"), ("C1", "廃棄先"), ("B2", "紙"), ("C2", "紙類"));
+        workbook.Save();
+        using var replacement = new ExcelTestWorkbook();
+        replacement.AddSheet("一覧", ("B1", "廃棄物名"), ("C1", "廃棄先"), ("B2", "缶"), ("C2", "金属"));
+        replacement.Save();
+        var handler = new FakeOllamaHandler();
+        using var ollamaHttp = new HttpClient(handler) { BaseAddress = new Uri("http://localhost:11434") };
+        await using var factory = new WebApplicationFactory<global::Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureAppConfiguration((_, config) =>
+                    config.AddInMemoryCollection(new Dictionary<string, string?> { ["WasteCatalog:ExcelPath"] = workbook.Path }));
+                builder.ConfigureTestServices(services =>
+                {
+                    services.RemoveAll<OllamaApiClient>();
+                    services.AddSingleton(new OllamaApiClient(ollamaHttp));
+                });
+            });
+        using var client = factory.CreateClient();
+        var request = new { Provider = "local", Model = "test", Images = new[] { "AA==" } };
+        Assert.Same(factory.Services.GetRequiredService<WasteCatalogReader>(),
+            factory.Services.GetRequiredService<WasteCatalogReader>());
+
+        var first = await client.PostAsJsonAsync("/api/analyze", request);
+        var second = await client.PostAsJsonAsync("/api/analyze", request);
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        File.Copy(replacement.Path, workbook.Path, overwrite: true);
+        var third = await client.PostAsJsonAsync("/api/analyze", request);
+
+        Assert.Equal(HttpStatusCode.OK, third.StatusCode);
+        using var modelRequest = JsonDocument.Parse(Assert.IsType<string>(handler.RequestBody));
+        Assert.Contains("缶 → 金属", modelRequest.RootElement.GetProperty("messages")[0].GetProperty("content").GetString());
+        File.Delete(workbook.Path);
+        var missing = await client.PostAsJsonAsync("/api/analyze", request);
+        Assert.Equal(HttpStatusCode.InternalServerError, missing.StatusCode);
+        Assert.Equal(3, handler.RequestCount);
     }
 
     private sealed class FakeOllamaHandler : HttpMessageHandler
